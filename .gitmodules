@@ -7,3 +7,6 @@
 [submodule "Java_IDX_Parser"]
 	path = java_idx_parser
 	url = https://github.com/Rurik/Java_IDX_Parser.git
+[submodule "shellbags"]
+	path = shellbags
+	url = https://github.com/williballenthin/shellbags.git

@@ -18,6 +18,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
+import volatility.constants
 import volatility.obj as obj
 import volatility.plugins.common as common
 import volatility.utils as utils
@@ -105,8 +106,7 @@ class processbl(common.AbstractWindowsCommand):
         orig_img = self._config.LOCATION
         # Setting up baseline image
         self._config.LOCATION = "file://" + self._config.BASELINEIMG
-
-        # Instantiating DriverScan plugin
+        
         addr_space = utils.load_as(self._config)
         dlllist = taskmods.DllList(self._config)
         
@@ -116,13 +116,19 @@ class processbl(common.AbstractWindowsCommand):
             
             proc = None
             
-            if str(task.ImageFileName).lower() not in self.baseline_proc_list:
+            if task.Peb == None:
+                continue
+            
+            #if str(task.ImageFileName).lower() not in self.baseline_proc_list:
+            if str(task.Peb.ProcessParameters.ImagePathName).lower() not in self.baseline_proc_list:
                 # We haven't seen the process yet
                 # Let's create a new object and add it
                 proc = {
                     'pid'   : [],
                     'ppid'  : [],
                     'image' : str(task.ImageFileName).lower() or '',
+                    'path'  : str(task.Peb.ProcessParameters.ImagePathName).lower() if task.Peb.ProcessParameters != None else '',
+                    'cmd'   : str(task.Peb.ProcessParameters.CommandLine).lower() if task.Peb.ProcessParameters != None else '',
                     'offset': [],
                     'exited': [],
                     'dlls' : {
@@ -133,10 +139,12 @@ class processbl(common.AbstractWindowsCommand):
                         'vad' : {}  # vad list
                     }
                 }
-                self.baseline_proc_list[proc['image']] = proc
+                #self.baseline_proc_list[proc['image']] = proc
+                self.baseline_proc_list[proc['path']] = proc
             
             # Get process from our list
-            proc = self.baseline_proc_list[str(task.ImageFileName).lower()]
+            #proc = self.baseline_proc_list[str(task.ImageFileName).lower()]
+            proc = self.baseline_proc_list[str(task.Peb.ProcessParameters.ImagePathName).lower()]
             
             proc['pid'].append(task.UniqueProcessId)
             proc['ppid'].append(task.InheritedFromUniqueProcessId)
@@ -212,10 +220,15 @@ class processbl(common.AbstractWindowsCommand):
         dlllist = taskmods.DllList(self._config)
         
         for task in dlllist.calculate():
+            if task.Peb == None:
+                continue
+            
             proc = {
                 'pid'   : task.UniqueProcessId,
                 'ppid'  : task.InheritedFromUniqueProcessId,
                 'image' : str(task.ImageFileName).lower(),
+                'path'  : str(task.Peb.ProcessParameters.ImagePathName).lower() if task.Peb.ProcessParameters != None else '',
+                'cmd'   : str(task.Peb.ProcessParameters.CommandLine).lower() if task.Peb.ProcessParameters != None else '',
                 'offset': task.obj_offset,
                 'dlls' : {
                     'load': {},
@@ -277,84 +290,102 @@ class processbl(common.AbstractWindowsCommand):
         
         # Compare the lists
         for task in self.image_proc_list: # Check all the processes in the image
-            image = task['image']
+            #if task['path'] != '':
+            image = task['path']
+            #else:
+            #    image = task['image']
             p_found = False
             if image in self.baseline_proc_list: # If the process is found
                 task_bl = self.baseline_proc_list[image]
                 p_found = True
-                for m in task['dlls']['comb']:
-                    # Check if we have the process in our combined list of the baseline
-                    m_found = False
-                    for m_bl in self.baseline_proc_list[image]['dlls']['comb']:
-                        if task['dlls']['comb'][m]['dll'] == task_bl['dlls']['comb'][m_bl]['dll']:
-                            m_found = True
+                if self._config.VERBOSE:
+                    for m in task['dlls']['comb']:
+                        # Check if we have the dll in our combined list of the baseline
+                        m_found = False
+                        for m_bl in self.baseline_proc_list[image]['dlls']['comb']:
+                            if task['dlls']['comb'][m]['dll'] == task_bl['dlls']['comb'][m_bl]['dll']:
+                                m_found = True
                     
-                    # Check in which lists we can find it in the baseline
-                    m_l = False
-                    for m_bl in self.baseline_proc_list[image]['dlls']['load']:
-                        if task['dlls']['comb'][m]['dll'] == task_bl['dlls']['load'][m_bl]['dll']:
-                            m_l = True
+                        # Check in which lists we can find it in the baseline
+                        m_l = False
+                        for m_bl in self.baseline_proc_list[image]['dlls']['load']:
+                            if task['dlls']['comb'][m]['dll'] == task_bl['dlls']['load'][m_bl]['dll']:
+                                m_l = True
                     
-                    m_i = False
-                    for m_bl in self.baseline_proc_list[image]['dlls']['init']:
-                        if task['dlls']['comb'][m]['dll'] == task_bl['dlls']['init'][m_bl]['dll']:
-                            m_i = True
+                        m_i = False
+                        for m_bl in self.baseline_proc_list[image]['dlls']['init']:
+                            if task['dlls']['comb'][m]['dll'] == task_bl['dlls']['init'][m_bl]['dll']:
+                                m_i = True
                     
-                    m_m = False
-                    for m_bl in self.baseline_proc_list[image]['dlls']['mem']:
-                        if task['dlls']['comb'][m]['dll'] == task_bl['dlls']['mem'][m_bl]['dll']:
-                            m_m = True
+                        m_m = False
+                        for m_bl in self.baseline_proc_list[image]['dlls']['mem']:
+                            if task['dlls']['comb'][m]['dll'] == task_bl['dlls']['mem'][m_bl]['dll']:
+                                m_m = True
                     
-                    # Check in which lists we can find it in our image
-                    m_l_i = False
-                    if task['dlls']['comb'][m]['dll'] in task['dlls']['load']:
-                        m_l_i = True
+                        # Check in which lists we can find it in our image
+                        m_l_i = False
+                        if task['dlls']['comb'][m]['dll'] in task['dlls']['load']:
+                            m_l_i = True
                     
-                    m_i_i = False
-                    if task['dlls']['comb'][m]['dll'] in task['dlls']['init']:
-                        m_i_i = True
+                        m_i_i = False
+                        if task['dlls']['comb'][m]['dll'] in task['dlls']['init']:
+                            m_i_i = True
                     
-                    m_m_i = False
-                    if task['dlls']['comb'][m]['dll'] in task['dlls']['mem']:
-                        m_m_i = True
+                        m_m_i = False
+                        if task['dlls']['comb'][m]['dll'] in task['dlls']['mem']:
+                            m_m_i = True
                     
+                        if not self._config.ONLYKNOWN and not self._config.ONLYUNKNOWN:
+                            yield(task, m, p_found, m_found, m_l, m_i, m_m, m_l_i, m_i_i, m_m_i)
+                    
+                        if self._config.ONLYKNOWN and m_found:
+                            yield(task, m, p_found, m_found, m_l, m_i, m_m, m_l_i, m_i_i, m_m_i)
+                    
+                        if self._config.ONLYUNKNOWN and not m_found:
+                            yield(task, m, p_found, m_found, m_l, m_i, m_m, m_l_i, m_i_i, m_m_i)
+                else:
                     if not self._config.ONLYKNOWN and not self._config.ONLYUNKNOWN:
-                        yield(task, m, p_found, m_found, m_l, m_i, m_m, m_l_i, m_i_i, m_m_i)
-                    
-                    if self._config.ONLYKNOWN and m_found:
-                        yield(task, m, p_found, m_found, m_l, m_i, m_m, m_l_i, m_i_i, m_m_i)
-                    
-                    if self._config.ONLYUNKNOWN and not m_found:
-                        yield(task, m, p_found, m_found, m_l, m_i, m_m, m_l_i, m_i_i, m_m_i)
+                        yield(task, p_found)
+                
+                    if self._config.ONLYKNOWN and p_found:
+                        yield(task, p_found)
+                
+                    if self._config.ONLYUNKNOWN and not p_found:
+                        yield(task, p_found)
                     
             else: # The process is not in our baseline
                 m_found = False
-                for m in task['dlls']['comb']:
-                    m_l_i = False
-                    if task['dlls']['comb'][m]['dll'] in task['dlls']['load']:
-                        m_l_i = True
+                if self._config.VERBOSE:
+                    for m in task['dlls']['comb']:
+                        m_l_i = False
+                        if task['dlls']['comb'][m]['dll'] in task['dlls']['load']:
+                            m_l_i = True
                     
-                    m_i_i = False
-                    if task['dlls']['comb'][m]['dll'] in task['dlls']['init']:
-                        m_i_i = True
+                        m_i_i = False
+                        if task['dlls']['comb'][m]['dll'] in task['dlls']['init']:
+                            m_i_i = True
                     
-                    m_m_i = False
-                    if task['dlls']['comb'][m]['dll'] in task['dlls']['mem']:
-                        m_m_i = True
+                        m_m_i = False
+                        if task['dlls']['comb'][m]['dll'] in task['dlls']['mem']:
+                            m_m_i = True
                     
+                        if not self._config.ONLYKNOWN:
+                            yield(task, m, p_found, m_found, False, False, False, m_l_i, m_i_i, m_m_i)
+                else:
                     if not self._config.ONLYKNOWN:
-                        yield(task, m, p_found, m_found, False, False, False, m_l_i, m_i_i, m_m_i)
+                            yield(task, p_found)
     
     def render_text(self, outfd, data):
         """Renders the text-based output"""
-        self.table_header(outfd, [('Proc_Offset(I)(V)', '[addrpad]'),
+        if self._config.VERBOSE:
+            self.table_header(outfd, [('Proc_Offset(I)(V)', '[addrpad]'),
                                   ('Image name', '15'),
                                   ('PID(I)', '4'),
                                   ('PPID(I)', '4'),
-                                  ('PFound', '5'),
+                                  ('PFound(B)', '5'),
                                   ('DLL_Base(I)(V)', '[addrpad]'),
                                   ('DLL_Size(I)', '[addr]'),
-                                  ('MFound', '5'),
+                                  ('MFound(B)', '5'),
                                   ('L(I)', '1'),
                                   ('I(I)', '1'),
                                   ('M(I)', '1'),
@@ -364,8 +395,8 @@ class processbl(common.AbstractWindowsCommand):
                                   ('DLL image name(I)', '')
                                   ])
 
-        for task, m, p_found, m_found, m_l, m_i, m_m, m_l_i, m_i_i, m_m_i in data:
-            self.table_row(outfd,
+            for task, m, p_found, m_found, m_l, m_i, m_m, m_l_i, m_i_i, m_m_i in data:
+                self.table_row(outfd,
                          task['offset'],
                          task['image'],
                          task['pid'],
@@ -381,6 +412,24 @@ class processbl(common.AbstractWindowsCommand):
                          m_i, # Init list in baseline
                          m_m, # Mem list in baseline
                          task['dlls']['comb'][m]['dll']
+                         )
+        else:
+            self.table_header(outfd, [('Proc_Offset(I)(V)', '[addrpad]'),
+                                  ('Image name', '15'),
+                                  ('Image path', '50'),
+                                  ('PID(I)', '4'),
+                                  ('PPID(I)', '4'),
+                                  ('PFound(B)', '5')
+                                  ])
+
+            for task, p_found in data:
+                self.table_row(outfd,
+                         task['offset'],
+                         task['image'],
+                         task['path'],
+                         task['pid'],
+                         task['ppid'],
+                         str(p_found)
                          )
 
 ##########################################################################################
@@ -431,53 +480,103 @@ class driverbl(common.AbstractWindowsCommand):
         addr_space = utils.load_as(self._config)
         drv_scan = DriverScan(self._config)
         
-        for obj, drv, ext  in drv_scan.calculate():
-            if ext.ServiceKeyName != None:
-                service_key_name = str(ext.ServiceKeyName).lower()
-            else:
-                service_key_name = None
-            
-            if obj.NameInfo.Name != None:
-                name = str(obj.NameInfo.Name).lower()
-            else:
-                name = None
-            
-            if drv.DriverName != None:
-                driver_name = str(drv.DriverName).lower()
-            else:
-                driver_name = None
-            
-            if drv.DriverSize != None:
-                driver_size = drv.DriverSize
-            else:
-                driver_size = None
-            
-            if drv.DriverStart != None:
-                driver_start = drv.DriverStart
-            else:
-                driver_start = None
-            
-            mods = dict((addr_space.address_mask(mod.DllBase), mod) for mod in lsmod(addr_space))
-            mod_addrs = sorted(mods.keys())
-            
-            IRPs = {}
-            for i, function in enumerate(drv.MajorFunction):
-                function = drv.MajorFunction[i]
-                module = tasks.find_module(mods, mod_addrs, addr_space.address_mask(function))
-                if module:
-                    module_name = str(module.BaseDllName or '').lower()
+        if volatility.constants.VERSION != "2.4":
+            for obj, drv, ext  in drv_scan.calculate():
+                if ext.ServiceKeyName != None:
+                    service_key_name = str(ext.ServiceKeyName).lower()
                 else:
-                    module_name = "unknown"
-                IRPs[MAJOR_FUNCTIONS[i]] = module_name               
-            
-            self.baseline_drv_list.append({
-                                            'service_key_name': service_key_name,
-                                            'name': name,
-                                            'driver_name': driver_name,
-                                            'driver_size': driver_size,
-                                            'driver_start': driver_start,
-                                            'irps': IRPs
-                                        })
+                    service_key_name = None
+                
+                if obj.NameInfo.Name != None:
+                    name = str(obj.NameInfo.Name).lower()
+                else:
+                    name = None
+                
+                if drv.DriverName != None:
+                    driver_name = str(drv.DriverName).lower()
+                else:
+                    driver_name = None
+                
+                if drv.DriverSize != None:
+                    driver_size = drv.DriverSize
+                else:
+                    driver_size = None
+                
+                if drv.DriverStart != None:
+                    driver_start = drv.DriverStart
+                else:
+                    driver_start = None
+                
+                mods = dict((addr_space.address_mask(mod.DllBase), mod) for mod in lsmod(addr_space))
+                mod_addrs = sorted(mods.keys())
+                
+                IRPs = {}
+                for i, function in enumerate(drv.MajorFunction):
+                    function = drv.MajorFunction[i]
+                    module = tasks.find_module(mods, mod_addrs, addr_space.address_mask(function))
+                    if module:
+                        module_name = str(module.BaseDllName or '').lower()
+                    else:
+                        module_name = "unknown"
+                    IRPs[MAJOR_FUNCTIONS[i]] = module_name               
+                
+                self.baseline_drv_list.append({
+                                                'service_key_name': service_key_name,
+                                                'name': name,
+                                                'driver_name': driver_name,
+                                                'driver_size': driver_size,
+                                                'driver_start': driver_start,
+                                                'irps': IRPs
+                                            })
+        else:
+            for driver in drv_scan.calculate():
+                header = driver.get_object_header()
+                if driver.DriverExtension.ServiceKeyName != None:
+                    service_key_name = str(driver.DriverExtension.ServiceKeyName).lower()
+                else:
+                    service_key_name = None
+                
+                if header.NameInfo.Name != None:
+                    name = str(header.NameInfo.Name).lower()
+                else:
+                    name = None
+                
+                if driver.DriverName != None:
+                    driver_name = str(driver.DriverName).lower()
+                else:
+                    driver_name = None
+                
+                if driver.DriverSize != None:
+                    driver_size = driver.DriverSize
+                else:
+                    driver_size = None
+                
+                if driver.DriverStart != None:
+                    driver_start = driver.DriverStart
+                else:
+                    driver_start = None
+                
+                mods = dict((addr_space.address_mask(mod.DllBase), mod) for mod in lsmod(addr_space))
+                mod_addrs = sorted(mods.keys())
+                
+                IRPs = {}
+                for i, function in enumerate(driver.MajorFunction):
+                    function = driver.MajorFunction[i]
+                    module = tasks.find_module(mods, mod_addrs, addr_space.address_mask(function))
+                    if module:
+                        module_name = str(module.BaseDllName or '').lower()
+                    else:
+                        module_name = "unknown"
+                    IRPs[MAJOR_FUNCTIONS[i]] = module_name               
+                
+                self.baseline_drv_list.append({
+                                                'service_key_name': service_key_name,
+                                                'name': name,
+                                                'driver_name': driver_name,
+                                                'driver_size': driver_size,
+                                                'driver_start': driver_start,
+                                                'irps': IRPs
+                                            })
         
         # Instantiating Modules plugin
         for m in lsmod(addr_space):
@@ -517,57 +616,109 @@ class driverbl(common.AbstractWindowsCommand):
         # Instantiating DriverScan plugin
         addr_space = utils.load_as(self._config)
         drv_scan = DriverScan(self._config)
-        
-        for obj, drv, ext  in drv_scan.calculate():
-            if ext.ServiceKeyName != None:
-                service_key_name = str(ext.ServiceKeyName).lower()
-            else:
-                service_key_name = None
-            
-            if obj.NameInfo.Name != None:
-                name = str(obj.NameInfo.Name).lower()
-            else:
-                name = None
-            
-            if drv.DriverName != None:
-                driver_name = str(drv.DriverName).lower()
-            else:
-                driver_name = None
-            
-            if drv.DriverSize != None:
-                driver_size = drv.DriverSize
-            else:
-                driver_size = None
-            
-            if drv.DriverStart != None:
-                driver_start = drv.DriverStart
-            else:
-                driver_start = None
-            
-            mods = dict((addr_space.address_mask(mod.DllBase), mod) for mod in lsmod(addr_space))
-            mod_addrs = sorted(mods.keys())
-            
-            IRPs = {}
-            for i, function in enumerate(drv.MajorFunction):
-                function = drv.MajorFunction[i]
-                module = tasks.find_module(mods, mod_addrs, addr_space.address_mask(function))
-                if module:
-                    module_name = str(module.BaseDllName or '').lower()
+        if volatility.constants.VERSION != "2.4":
+            for obj, drv, ext  in drv_scan.calculate():
+                if ext.ServiceKeyName != None:
+                    service_key_name = str(ext.ServiceKeyName).lower()
                 else:
-                    module_name = "unknown"
-                IRPs[MAJOR_FUNCTIONS[i]] = module_name
-            
-            self.image_drv_list.append({
-                                            'service_key_name': service_key_name,
-                                            'name': name,
-                                            'driver_name': driver_name,
-                                            'driver_size': driver_size,
-                                            'driver_start': driver_start,
-                                            'irps': IRPs,
-                                            'obj': obj,
-                                            'drv': drv,
-                                            'ext': ext
-                                        })
+                    service_key_name = None
+                
+                if obj.NameInfo.Name != None:
+                    name = str(obj.NameInfo.Name).lower()
+                else:
+                    name = None
+                
+                if drv.DriverName != None:
+                    driver_name = str(drv.DriverName).lower()
+                else:
+                    driver_name = None
+                
+                if drv.DriverSize != None:
+                    driver_size = drv.DriverSize
+                else:
+                    driver_size = None
+                
+                if drv.DriverStart != None:
+                    driver_start = drv.DriverStart
+                else:
+                    driver_start = None
+                
+                mods = dict((addr_space.address_mask(mod.DllBase), mod) for mod in lsmod(addr_space))
+                mod_addrs = sorted(mods.keys())
+                
+                IRPs = {}
+                for i, function in enumerate(drv.MajorFunction):
+                    function = drv.MajorFunction[i]
+                    module = tasks.find_module(mods, mod_addrs, addr_space.address_mask(function))
+                    if module:
+                        module_name = str(module.BaseDllName or '').lower()
+                    else:
+                        module_name = "unknown"
+                    IRPs[MAJOR_FUNCTIONS[i]] = module_name
+                
+                self.image_drv_list.append({
+                                                'service_key_name': service_key_name,
+                                                'name': name,
+                                                'driver_name': driver_name,
+                                                'driver_size': driver_size,
+                                                'driver_start': driver_start,
+                                                'irps': IRPs,
+                                                'obj': obj,
+                                                'drv': drv,
+                                                'ext': ext
+                                            })
+        else:
+            for driver in drv_scan.calculate():
+                header = driver.get_object_header()
+                if driver.DriverExtension.ServiceKeyName != None:
+                    service_key_name = str(driver.DriverExtension.ServiceKeyName).lower()
+                else:
+                    service_key_name = None
+                
+                if header.NameInfo.Name != None:
+                    name = str(header.NameInfo.Name).lower()
+                else:
+                    name = None
+                
+                if driver.DriverName != None:
+                    driver_name = str(driver.DriverName).lower()
+                else:
+                    driver_name = None
+                
+                if driver.DriverSize != None:
+                    driver_size = driver.DriverSize
+                else:
+                    driver_size = None
+                
+                if driver.DriverStart != None:
+                    driver_start = driver.DriverStart
+                else:
+                    driver_start = None
+                
+                mods = dict((addr_space.address_mask(mod.DllBase), mod) for mod in lsmod(addr_space))
+                mod_addrs = sorted(mods.keys())
+                
+                IRPs = {}
+                for i, function in enumerate(driver.MajorFunction):
+                    function = driver.MajorFunction[i]
+                    module = tasks.find_module(mods, mod_addrs, addr_space.address_mask(function))
+                    if module:
+                        module_name = str(module.BaseDllName or '').lower()
+                    else:
+                        module_name = "unknown"
+                    IRPs[MAJOR_FUNCTIONS[i]] = module_name
+                
+                self.image_drv_list.append({
+                                                'service_key_name': service_key_name,
+                                                'name': name,
+                                                'driver_name': driver_name,
+                                                'driver_size': driver_size,
+                                                'driver_start': driver_start,
+                                                'irps': IRPs,
+                                                'obj': header,
+                                                'drv': driver,
+                                                'ext': driver.DriverExtension
+                                            })
         
         for m in lsmod(addr_space):
             self.image_mod_list.append({
@@ -685,7 +836,9 @@ class driverbl(common.AbstractWindowsCommand):
                          str(drv_irp),
                          str(drv_path)
                          )
-
+##########################################################################################
+# SERVICEBL PLUGIN
+##########################################################################################
 class servicebl(common.AbstractWindowsCommand):
     '''
     Scans memory for service objects and compares the results with the baseline image
@@ -846,7 +999,7 @@ class servicebl(common.AbstractWindowsCommand):
     def render_text(self, outfd, data):
         self.table_header(outfd, [
                             ("Offset", "[addrpad]"),
-                            ("Serice Name", "30"),
+                            ("Service Name", "30"),
                             ("PID", "5"),
                             ("Found", "5"),
                             ("DName", "5"),
