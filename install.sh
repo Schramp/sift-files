@@ -23,6 +23,10 @@ cp volatility/*.py /usr/lib/python2.7/dist-packages/volatility/plugins
 rm -f /usr/lib/python2.7/dist-packages/volatility/plugins/javarat.py
 chmod -R 644 /usr/lib/python2.7/dist-packages/volatility/plugins/*.py
 
+# Remove boxedit.py(c)
+rm /usr/lib/python2.7/dist-packages/volatility/plugins/boxedit.py
+rm /usr/lib/python2.7/dist-packages/volatility/plugins/boxedit.pyc
+
 # Install Density Scout
 cp densityscout/densityscout /usr/local/bin
 
