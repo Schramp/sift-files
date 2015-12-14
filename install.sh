@@ -35,6 +35,9 @@ cp page_brute/*.py /usr/local/bin
 # Install Java PDX Parser
 cp java_idx_parser/*.py /usr/local/bin
 
+# 4n6 Scripts
+cp 4n6-scripts/* /usr/local/bin
+
 # Install SIFT Files
 mkdir -p /usr/share/sift/resources
 cp sift/resources/* /usr/share/sift/resources

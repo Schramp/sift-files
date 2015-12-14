@@ -10,3 +10,6 @@
 [submodule "shellbags"]
 	path = shellbags
 	url = https://github.com/williballenthin/shellbags.git
+[submodule "4n6-scripts"]
+	path = 4n6-scripts
+	url = https://github.com/cheeky4n6monkey/4n6-scripts
