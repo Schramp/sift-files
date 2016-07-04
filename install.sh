@@ -75,3 +75,4 @@ bash fixubuntu.sh
 # Install rc.local patch for more loopback devices
 # fixes https://github.com/sans-dfir/sift/issues/22
 patch -sN /etc/rc.local < patches/rc.local.patch
+patch -sN /usr/lib/python2.7/dist-packages/dfvfs/vfs/tsk_file_entry.py < patches/dfvfs.patch
