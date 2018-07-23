@@ -111,9 +111,12 @@ def main(argv):
     if args.long_flags == True:
         flags = FLAGS_LONG
     
-    create_temp_file(infile)
+    if args.tempfile:
+        tmpname = create_temp_file(infile)
+    else:
+        tmpname = infile
     
-    it = file("{}.tmp".format(infile),'rb')
+    it = file(tmpname,'rb')
     if outfile is None:
         ot = sys.stdout
     else:
@@ -137,9 +140,16 @@ def main(argv):
         joinchar = '|'
 
     position_marker = 0
+    oldpos = -4
     go = True 
 
     while (go == True):
+        if (position_marker <= oldpos):
+        #We NEVER sit still, skip to next page boundary
+            position_marker = oldpos + (0x1000 + 4)
+            position_marker = position_marker & 0xfffffffffffff000
+        oldpos = position_marker
+
         try:
             #Read the record size, read the next record
             #sys.stderr.write("\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b Offset {}".format(position_marker))
@@ -147,25 +157,30 @@ def main(argv):
             it.seek(position_marker, os.SEEK_SET)
             data = it.read(800)
             if len(data) < 60:
+                print("End of File at %d" % position_marker);
                 go = False
                 continue
-                
+
             recordsize = struct.unpack_from('i', data)[0]
-                                    
-            if (recordsize <0) :
-                go = False          #Invalid data can create an endless loop
+
+            if (recordsize < 0) :
+                continue
+            if (recordsize >1024) :
+                continue
             if (recordsize < 60):
                 #Note: There are places in the test $USNJRNL$J file where there are gaps between records that are not accounted for by the record size.
                 #The gaps are always 0x00 filled. If the record size is zero, move forward until the next non zero byte is found. The largest gap I found was 296 bytes.
 
                 gap_size = len(data.lstrip('\x00'))
                 if  gap_size <1:
-                    break
+                    continue
                 else:
+
                     position_marker = position_marker + 800- gap_size
                     # records are aligned at 0x0 or 0x8, so zero out least significant 3 bits
                     # this is necessary if the first non-zero byte is not found at an 0x0 or 0x8 offset
-                    position_marker = position_marker & 0xfffffff8
+                    position_marker = position_marker & 0xfffffffffffffff8
+
                     continue
 
             it.seek(position_marker)
@@ -178,7 +193,7 @@ def main(argv):
                 position_marker = position_marker + recordsize      #Initially forgot this. A struct error would loop forever...
                 continue
             if usn_record == None:
-                position_marker = position_marker + recordsize
+                position_marker = position_marker + 4
                 continue
             usn_record = deflag_item(usn_record,flags)
                             
@@ -237,13 +252,10 @@ def main(argv):
             
         except struct.error, e:
             sys.stderr.write(e.message)
-            go = False
             sys.stderr.write( "Struct format error at Tell: {}\n".format(it.tell()))
             
         except:
-            go = False
-            print ("Unexpected error:", sys.exc_info()[0])
-            raise
+            print ("Unexpected error at %d:" % position_marker, sys.exc_info()[0])
 
     it.close()
     ot.close()
@@ -261,6 +273,7 @@ def cliargs():
     parser.add_argument('-t', '--type', required=False, action='store', dest='out_format', default="csv", choices=['csv', 'tab', 'body'], help='Output format, default to CSV')
     parser.add_argument('-a', '--all', required=False, action='store_true', dest='all_records', default=False, help='Print all records, not just closed records.')
     parser.add_argument('-l', '--long', required=False, action='store_true', dest='long_flags', default=False, help='Print long strings for the file attribute flgas.')
+    parser.add_argument('-n', '--notemp', required=False, action='store_false', dest='tempfile', default=True, help='Do not create a tempfile without leading 0x00 bytes, this saves copy time')
     args = parser.parse_args()
     return args
 
@@ -277,8 +290,9 @@ def create_temp_file(infile):
     position = it.tell() - len(data)
     it.seek(position)
 
+    tmpname = "{}.tmp".format(infile)
     #replace main file with working file, then clean up
-    ot = file("{}.tmp".format(infile),'wb')
+    ot = file(tmpname,'wb')
     while (True):
         data = it.read(655360)
         if len(data) <655359:
@@ -290,6 +304,7 @@ def create_temp_file(infile):
     it.close()
     ot.close()
     data = ''
+    return tmpname
 
 def deflag_item(r, flags):
     '''Replaces values where needed for each tuple, returns new
