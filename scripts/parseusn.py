@@ -260,7 +260,8 @@ def main(argv):
     it.close()
     ot.close()
 
-    os.unlink("{}.tmp".format(infile))
+    if args.tempfile:
+        os.unlink(tmpname)
 
     exit(0)
 
